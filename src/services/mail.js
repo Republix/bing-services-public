@@ -35,9 +35,9 @@ class Email {
                     if (err) {
                         suc = false
                         try {
-                            error: JSON.stringify(err)
+                            error = JSON.stringify(err)
                         } catch (e) {
-                            error: String(err)
+                            error = String(err)
                         }
                         resolve()
                         return
