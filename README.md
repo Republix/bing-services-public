@@ -7,6 +7,13 @@
 > - 默认开启允许跨域，支持bing 图片/故事接口的请求转发
 > - 支持邮件预警，收集信息或存储信息失败时发送警告邮件
 
+##### 预览
+[api.republix.cn/bing](https://api.republix.cn/bing)
+
+[bing.republix.cn](https://bing.republix.cn/)
+
+<br/>
+
 需要环境
 - Redis
 - Mongodb
@@ -25,7 +32,7 @@
 ```
 
 #### 接口说明
-参见 (api-info)[./static/api-info.json]
+参见 [api-info](./static/api-info.json)
 
 
 #### 默认定时器服务
@@ -60,6 +67,6 @@
 
 
 #### 跨域设置
-参考yarn add (koa2-origin-cors)[https://www.npmjs.com/package/koa2-origin-cors]
+参考yarn add [koa2-origin-cors](https://www.npmjs.com/package/koa2-origin-cors)
 
 

@@ -1,0 +1,54 @@
+{
+    "域名前缀": [
+        "https://api.republix.cn/bing/",
+        "https://bing.republix.cn/",
+        "http://bing.republix.cn"
+    ],
+    "获取今日bing数据": {
+        "api": "/today",
+        "exp": [
+            "/today",
+            "/today?d=20190203"
+        ],
+        "params": [
+            { "d" : "指定日期 yyyyMMd格式" }
+        ]
+    },
+    "获取收集的bing数据列表": {
+        "api": "/story-list",
+        "exp": [
+            "/story-lis",
+            "/story-list?sort=1",
+            "/story-list?pageNo=1&pageSize=10&sort=0"
+        ],
+        "params": [
+            { "sort": "是否排序, 为空不排序（分页执行排序，默认为倒序） 不为空时执行从小到大排序, 为0时正序排序，其余情况倒序" },
+            { "pageNo": "第几页，Number，最小为1" },
+            { "pageSize": "每页多少条数据， Number, 最小为1" }
+        ]
+    },
+    "必应图片接口转发": {
+        "api": "/bing-image",
+        "info": "params 同bing",
+        "exp": [
+            "/bing-image",
+            "/bing-image?n=3&idx=1"
+        ],
+        "params": [
+            { "format": "返回数据格式 默认 js, js(json) or null(default: xml)" },
+            { "idx": "请求图片的日期偏移天数， Number，默认为0， 0 today, -1 明天 1 截至昨天" },
+            { "n": "请求图片数量，Number, 默认为1" },
+            { "mkt": "地区, 默认zh-CN" }
+        ]
+    },
+    "必应图片故事接口转发": {
+        "api": "/bing-story",
+        "exp": [
+            "/bing-story",
+            "/bing-story?d=20190203"
+        ],
+        "params": [
+            { "d": "指定日期 yyyyMMd格式" }
+        ]
+    }
+}
