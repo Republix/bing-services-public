@@ -7,10 +7,12 @@
 > - 默认开启允许跨域，支持bing 图片/故事接口的请求转发
 > - 支持邮件预警，收集信息或存储信息失败时发送警告邮件
 
-##### 预览
+##### 预览 & 接口说明
 [api.republix.cn/bing](https://api.republix.cn/bing)
 
 [bing.republix.cn](https://bing.republix.cn/)
+
+[api-info](./static/api-info.json)
 
 <br/>
 
@@ -30,9 +32,6 @@
     yarn run dev // 开发 development
     yarn run online // 线上 product
 ```
-
-#### 接口说明
-参见 [api-info](./static/api-info.json)
 
 
 #### 默认定时器服务
