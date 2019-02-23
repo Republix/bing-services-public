@@ -79,7 +79,7 @@ class BingServices {
         let imageData = null // 缓存每日图片数据
         let originData = null // JSON 格式Story数据
         let canSave = false // 是否可以存储
-        let task = 0 // 成功任务 1 查询图片 2 查询故事 3 存redis 4 存mongod 
+        let task = 0 // 成功任务 1 查询图片 2 查询故事 3 存redis 4 存mongod
 
         logger.info(`执行dailySave: ${bingToday} 开始`, bingImageUrl, bingStoryUrl)
 
@@ -106,7 +106,7 @@ class BingServices {
                 saveData.id = bingToday
                 // 添加之前保存的无水印图
                 saveData.imageUrl = imageNoWaterMark
-                
+
                 originData = saveData
                 storyData = JSON.stringify(saveData)
                 task += 1
@@ -144,11 +144,11 @@ class BingServices {
         logger.info(`执行dailySave: ${bingToday} 完成, task: ${ task === 4 ? "success" : task }`)
 
         // 满足存储条件 确保不重复储存
-        let mg_result = StoreService.saveToBingData(originData)
+        let mg_result = await StoreService.saveToBingData(originData)
         if (mg_result.suc) {
             logger.info(`Mongod存储${bingToday}成功`)
         } else {
-            logger.error(`Mongod存储${bingToday}失败`, mg_result.err)
+            logger.error(`Mongod存储${bingToday}失败`, mg_result)
             // 发送失败邮件
             MailSercice.sendErrorReportMail(`Mongod存储${bingToday}失败`, mg_result.err)
         }
@@ -156,15 +156,14 @@ class BingServices {
 
 
     /**
-     * 批量存取数据到数据库中
-     * @param {Array} listData 
+     * 测试接口，存所有数据到mongod
      */
-    static async saveListToDB (listData) {
+    static async saveAllDataToDB () {
 
         // TODO
         // 部分流程转到store-services中去
         //
-        // 
+        //
         let {detail} = await redisInstance.hashGetAllValues(BING_STORY_KEY)
         let resultList = []
 
@@ -182,13 +181,13 @@ class BingServices {
         resultList = resultList.sort((p, n) => { return Number(p.id) - Number(n.id) })
 
         const result = await StoreService.multiSave(resultList)
-        
+
         return result
     }
 
     /**
      * 存储指定时间的daily
-     * @param {Array} list 
+     * @param {Array} list
      */
     static async saveBingDailyStack (list) {
         // validate && 筛选 && 格式化数据
@@ -229,7 +228,7 @@ class BingServices {
     /**
      * 与bing日期相差的天数，如果时间超过limit 则返回false
      * const limit = gap >= -1 && gap <= 7
-     * @param {date} day 
+     * @param {date} day
      * @return (gap >= -1 && gap <= 7) ? gap : false不满足
      */
     static getBingDayGap (day) {
@@ -282,7 +281,7 @@ class BingServices {
     static getBingStoryUrl (d) {
         return CONFIG.API.bingStoryApi + '?d=' + d
     }
-    
+
     /**
      * 获取bing格式日期 yyyMMdd
      * @prams {Date} date 指定一个要转换日期
@@ -320,9 +319,9 @@ class BingServices {
             return elm
         })
         if (sort)
-            result = result.sort((a, b) => { 
+            result = result.sort((a, b) => {
                 return sort === '0' ?
-                     Number(a.id) - Number(b.id) : 
+                     Number(a.id) - Number(b.id) :
                      Number(b.id) - Number(a.id)
             }) // id从小到大排序
         return result
@@ -333,9 +332,9 @@ class BingServices {
             try { item = JSON.parse(item) } catch(e) {}
             return item
         })
-        data = data.sort((a, b) => { 
+        data = data.sort((a, b) => {
             return sort === '0' ?
-                Number(a.id) - Number(b.id) : 
+                Number(a.id) - Number(b.id) :
                 Number(b.id) - Number(a.id)
         }) // id从小到大排序
 

@@ -17,8 +17,8 @@ class Email {
         this.mailOptions = {}
         this.mailOptions.html = ''
 
-        this.transporterOptions = CONFIG.MAIL_DEFAULT_TRANSPORT 
-        
+        this.transporterOptions = CONFIG.MAIL_DEFAULT_TRANSPORT
+
         this.transporter = NodeMailer.createTransport(this.transporterOptions)
         logger.info('创建mail transporter完成')
     }
@@ -77,7 +77,7 @@ const REDIS_MAIL_KEY = (str = '') => {
 
 
 const EmailServices = {
-    
+
     /**
      * 每周发送统计邮件
      */
@@ -115,13 +115,13 @@ const EmailServices = {
             } catch (e) {
                 errorContent = '未知错误'
             }
-        } 
+        }
 
         const mailContext = {
             from: '810242127@qq.com',
             to: 'asunmatch@outlook.com',
             subject: `BingProxyServer-Error-${errorTitle}`,
-            html: `<table><tr><td>${statisticalTime}</td></tr><tr><td>${errorTitle}error: ${errorContent}</td></tr></table>`
+            html: `<table><tr><td>${statisticalTime}</td></tr><tr><td>${errorTitle} error: ${errorContent}</td></tr></table>`
         }
 
         const result = await mail.sendMail({ config: mailContext })

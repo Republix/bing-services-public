@@ -7,25 +7,25 @@
 const Mongo = require('./mongo/mongodb')
 const appLogger = require('../midware/log4j').app_logger // 仅调试使用
 
-
 class StoreService {
-    constructor () {}
-    
+    constructor () {
+    }
+
     /**
      * Todo @param {Boolean} exist 允许重复
      * @param {*} data 要存储的数据
      */
     static async saveToBingData (data) {
 
-        const reuslt = { suc: false }
+        let result = { suc: false }
 
         await Mongo.bingModel.create(data).then((res) => {
-            reuslt = { suc: true }
+            result = { suc: true }
         }).catch((err) => {
-            reuslt = { suc: false, err}
+            result = { suc: false, err}
         })
 
-        return reuslt
+        return result
     }
 
     static async multiSave (list) {
@@ -44,9 +44,8 @@ class StoreService {
         return result
     }
 
-    
+
 
 }
 
-// module.exports = StoreService
 module.exports = StoreService
