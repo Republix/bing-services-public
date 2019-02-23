@@ -121,7 +121,7 @@ const EmailServices = {
             from: '810242127@qq.com',
             to: 'asunmatch@outlook.com',
             subject: `BingProxyServer-Error-${errorTitle}`,
-            html: `<table><tr><td>${statisticalTime}</td></tr><tr><td>执行每日保存时出错 error: ${errorContent}</td></tr></table>`
+            html: `<table><tr><td>${statisticalTime}</td></tr><tr><td>${errorTitle}error: ${errorContent}</td></tr></table>`
         }
 
         const result = await mail.sendMail({ config: mailContext })
