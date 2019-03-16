@@ -1,6 +1,6 @@
 const CONFIG = require('../config'),
-    logger = require('../midware/log4j').app_logger,
-    redisInstance = require('./redis').Instance,
+    logger = require('./logs').app,
+    {RedisStore} = require('./store'),
     NodeMailer = require('nodemailer'),
     utils = require('../common/utils'),
     fs = require('fs'),
@@ -17,8 +17,8 @@ class Email {
         this.mailOptions = {}
         this.mailOptions.html = ''
 
-        this.transporterOptions = CONFIG.MAIL_DEFAULT_TRANSPORT
-
+        this.transporterOptions = CONFIG.MAIL_DEFAULT_TRANSPORT 
+        
         this.transporter = NodeMailer.createTransport(this.transporterOptions)
         logger.info('创建mail transporter完成')
     }
@@ -77,13 +77,13 @@ const REDIS_MAIL_KEY = (str = '') => {
 
 
 const EmailServices = {
-
+    
     /**
      * 每周发送统计邮件
      */
     async sendWeekMail () {
 
-        const allSaveData = (await redisInstance.hashGetAllValues(BING_STORY_KEY)).detail
+        const allSaveData = (await RedisStore.hvals(BING_STORY_KEY)).doc
         const allSaveCount = allSaveData ? allSaveData.length : 0
         const statisticalTime = utils.formatTime(new Date(), 'yyyy-MM-dd hh:mm:ss')
 
@@ -98,14 +98,19 @@ const EmailServices = {
 
         if (result.suc) { // 发送成功
             logger.info('发送每周邮件成功')
-            redisInstance.hashSet(REDIS_MAIL_SUC_TYPE, REDIS_MAIL_KEY('weekly'), result.context)
+            RedisStore.hset(REDIS_MAIL_SUC_TYPE, REDIS_MAIL_KEY('weekly'), result.context)
         } else {
             logger.error('发送每周邮件失败', result.error)
-            redisInstance.hashSet(REDIS_MAIL_FAILED_TYPE, REDIS_MAIL_KEY('weekly'), result.error)
+            RedisStore.hset(REDIS_MAIL_FAILED_TYPE, REDIS_MAIL_KEY('weekly'), result.error)
         }
 
     },
 
+    /**
+     * 错误邮件报告
+     * @param {String} 标题
+     * @param {String} 内容
+     */
     async sendErrorReportMail (errorTitle = '未命名错误', errorContent = '注意排查') {
         const statisticalTime = utils.formatTime(new Date(), 'yyyy-MM-dd hh:mm:ss')
         // errorContent 转换
@@ -115,7 +120,7 @@ const EmailServices = {
             } catch (e) {
                 errorContent = '未知错误'
             }
-        }
+        } 
 
         const mailContext = {
             from: '810242127@qq.com',
@@ -127,10 +132,10 @@ const EmailServices = {
         const result = await mail.sendMail({ config: mailContext })
         if (result.suc) { // 发送成功
             logger.info(`<捕获错误邮件: ${errorTitle}> 发送成功`)
-            redisInstance.hashSet(REDIS_MAIL_SUC_TYPE, REDIS_MAIL_KEY('catch_detail_savee_error'), result.context)
+            RedisStore.hset(REDIS_MAIL_SUC_TYPE, REDIS_MAIL_KEY('catch_detail_savee_error'), result.context)
         } else {
             logger.error(`<捕获错误邮件>: ${errorTitle} 发送失败`, result.error)
-            redisInstance.hashSet(REDIS_MAIL_FAILED_TYPE, REDIS_MAIL_KEY('catch_detail_savee_error'), result.error)
+            RedisStore.hset(REDIS_MAIL_FAILED_TYPE, REDIS_MAIL_KEY('catch_detail_savee_error'), result.error)
         }
     }
     // todo 可选每日邮件

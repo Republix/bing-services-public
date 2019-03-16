@@ -7,7 +7,9 @@ const router = new Router({
 })
 
 router
-    .get('', controller.index)
+    .get('', controller.bingApiInfo)
+
+    .get('api-info', controller.bingApiInfo)
 
     // 转发接口
     // bing-image 转发

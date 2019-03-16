@@ -1,12 +1,13 @@
 const superagent = require('superagent'),
     CONFIG = require('./config'),
     utils = require('./common/utils'),
-    logger = require('./midware/log4j').middle_logger,
-    BingService = require('./services/services').BingService,
-    redisInstance = require('./services/redis').Instance,
+    logger = require('./services/logs').api,
+    BingService = require('./services/bing'),
+    {RedisStore} = require('./services/store'),
     API_INFO_JSON = require('../static/api-info.json')
 
 let ApiInfo = {}
+const BING_REDIS_KEY = 'bing_storys'
 
 try {
     ApiInfo = JSON.stringify(API_INFO_JSON)
@@ -16,9 +17,9 @@ try {
 
 
 const helper = {
-    
+
     /**
-     * 
+     *
      * @param {Date} date yyyyMMdd
      */
     getBingStoryUrl (date) {
@@ -31,12 +32,12 @@ const helper = {
     /**
      * 获取数据成功时数据格式化
      * @param {Array} data
-     * @param {1920|1368} w 
+     * @param {1920|1368} w
      * todo
      */
     formatImageList (data, w) {
         data.suc = true
-        
+
         const regList = {
             '1366': { reg: /_1920x1080\./, res: '_1366x768.' }
         }
@@ -57,27 +58,26 @@ module.exports = {
     /**
      * 返回接口说明
      */
-    index: async (ctx) => {
+    bingApiInfo: async (ctx) => {
         ctx.body = ApiInfo
     },
-
     /**
      * 代理请求Bing图片
      */
     bingImageProxy: async (ctx, next) => {
-        
+
         let ctx_data = ctx.method === 'GET' ? ctx.request.query : ctx.request.body
 
-        let queryInfo = { // 
+        let queryInfo = { //
             format: ctx_data.format,
             idx: ctx_data.idx,
             n: ctx_data.n,
             mkt: ctx_data.mkt
         }
-        
+
         let imageWidth = ctx_data.w || null
-        
-        let url = BingService.getBingImageUrl(queryInfo)
+
+        let url = BingService.getBingImageRequestUrl(queryInfo)
 
         logger.info('请求Bing图片接口: ' + url)
         await superagent.get(url).set('Content-type', 'application/json')
@@ -93,14 +93,14 @@ module.exports = {
                 logger.error('请求bing图片接口', e)
                 ctx.body = JSON.stringify({ suc: false, msg: 'connect to bing image api failed' })
             })
-        
+
     },
 
     /**
      * 获取必应故事ctrl
      */
     bingStoryProxy: async (ctx, next) => {
-        
+
         let query_date = utils.getParameterByName(ctx.request.url, 'd')
         // validate params
         if (!query_date && query_date !== 0) {
@@ -114,13 +114,13 @@ module.exports = {
             return
         }
 
-        let url = BingService.getBingStoryUrl(query_date)
+        let url = BingService.getBingStoryRequestUrl(query_date)
 
         logger.info('request bingStory', url)
         await superagent.post(url).set('Content-type', 'application/json')
             .then((res) => {
                 if (res.status !== 200 || !res.body) {
-                    ctx.body = JSON.stringify({ suc: false, msg: `${res.status}` })
+                    ctx.body = JSON.stringify({ suc: false, msg: `no data ${res.status}`, notice: '从2019.03.01日起 bing故事接口不再提供数据' })
                 } else {
                     res.body.suc = true
                     ctx.body = JSON.stringify(res.body)
@@ -142,13 +142,14 @@ module.exports = {
         const day = ctx.request.query.d
         const bingToday = BingService.getBingDate(day)
 
-        await redisInstance.hashGet('bing_storys', bingToday).then((res) => {
-            if (res.verify && res.detail) {
-                res.detail.success = true
-                ctx.body = res.detail
+        await RedisStore.hget(BING_REDIS_KEY, bingToday).then((res) => {
+            if (res.suc && res.doc) {
+                res.doc.success = true
+                ctx.body = res.doc
             } else {
-                ctx.body = JSON.stringify({ msg: 'no data', success: false })
-                BingService.saveBingDaily()
+                ctx.body = JSON.stringify({ msg: 'no data', success: false, notice: '从2019.03.01日起 bing故事接口不再提供数据' })
+                // 0301 后停止辅助流程
+                // BingService.saveBingDaily()
             }
         }).catch((err) => {
             ctx.body = JSON.stringify({ msg: 'server error', success: false })
@@ -160,14 +161,14 @@ module.exports = {
      * 返回存储的bing数据（image+story)
      */
     bingStore: async (ctx, next) => {
-        
+
         const ctx_data = ctx.method === 'GET' ? ctx.request.query : ctx.request.body,
               pageNo = Math.max(1, Number(ctx_data.pageNo)) || null,
               pageSize = Math.max(1, Number(ctx_data.pageSize)) || null,
               sort = ctx_data.sort || false
 
-        await redisInstance.hashGetAllValues('bing_storys').then((res) => {
-            let result = res.detail || []
+        await RedisStore.hvals('bing_storys').then((res) => {
+            let result = res.doc || []
 
             if (pageNo && pageSize) {
                 result = BingService.getPageList(result, pageNo, pageSize, sort)
@@ -182,13 +183,13 @@ module.exports = {
         })
     },
 
-    
+    // 与功能无关
     bullet: async (ctx) => {
-        // Todo 
+        // Todo
         let ip = ctx.request.ip
         let uesrAgent = ctx.request.header && ctx.request.header['user-agent']
         let reqTiming = utils.formatTime(new Date(), `yyyy-MM-dd hh:mm:ss:S`)
-    
+
         saveInfo = {
             uesrAgent,
             ip,
@@ -196,14 +197,13 @@ module.exports = {
         }
 
         logger.mark(`some one disappeared ${ctx.request.ip} ${uesrAgent}`)
-        // redisInstance.hashSet(
-        redisInstance.rPush(
-            'sp_visit_info', 
+        RedisStore.rpush(
+            'sp_visit_info',
             JSON.stringify(saveInfo)
         ).then(() => {},
         ).catch((e) => {
             logger.error('Redis存<userAgent>失败', e)
-        })   
+        })
     },
 
     // 与功能无关
@@ -214,7 +214,7 @@ module.exports = {
                 console.info('If you see the black glasses, you wil')
             </script>
         `
-        next()
+        // next()
     }
 
 }

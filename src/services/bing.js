@@ -1,17 +1,22 @@
 /**
- * 主Service
+ * image主service
  */
 
 const superagent = require('superagent'),
     CONFIG = require('../config'),
-    logger = require('../midware/log4j').app_logger,
-    redisInstance = require('./redis').Instance,
+    logger = require('./logs').app,
+    path = require('path'),
     utils = require('../common/utils')
 
 const StoreService = require('./store')
-const MailSercice = require('./mail')
+const mailService = require('./mail')
+const QiniuService = require('./qiniu')
+const DownLoadService = require('./download')
+const { RedisStore, MongoModel: { bingModel } } = StoreService
 
 const BING_STORY_KEY = 'bing_storys'
+const QINIU_DOMAIN = 'https://qd.republix.cn'
+const SAVE_IMAGE_PATH = '/bing-resource/'
 
 // 特有流程utils
 const helper = {
@@ -38,13 +43,17 @@ const helper = {
         })
         // filter返回集合，format确定返回格式化集合还是原集合
         return filter ? (format ? formatList : result) : Boolean(result.length > 0)
-    }
+    },
+
 }
 
-
+/**
+ * TODO
+ * logger 为detailSave单独出一个cataloge
+ */
 class BingServices {
-    constructor () {}
 
+    constructor () {}
     /**
      * 每天存储bingImageStoryData
      * 获取当天日期，发送请求，查询是否存在
@@ -57,8 +66,8 @@ class BingServices {
     static async saveBingDaily ({date, warning} = '') {
 
         const _idx = date // 日期偏移量
-        ? this.getBingDayGap(date)
-        : 0
+            ? this.getBingDayGap(date)
+            : 0
 
         if (_idx === false) {
             logger.error(`参数范围错误: ${date}`)
@@ -68,109 +77,171 @@ class BingServices {
 
         // 初始化请求参数 以及固定配置
         const bingToday = this.getBingDate(date), // bing图片日期格式, 并作为键 // @note todo or BingServices.getBingDate(date)
-            bingImageUrl = this.getBingImageUrl({idx: _idx}),
-            bingStoryUrl = this.getBingStoryUrl(bingToday),
+            bingImageRequestUrl = this.getBingImageRequestUrl({idx: _idx}),
+            bingStoryRequestUrl = this.getBingStoryRequestUrl(bingToday),
             prefix = CONFIG.BING_IMAGE.PREFIX, // global dns
             defaultResolution = CONFIG.BING_IMAGE.DEFAULT_RESOLUTION // 默认分辨率
 
         // 缓存信息
-        let imageNoWaterMark = null // 无水印地址
-        let storyData = null // 缓存story数据
         let imageData = null // 缓存每日图片数据
-        let originData = null // JSON 格式Story数据
-        let canSave = false // 是否可以存储
-        let task = 0 // 成功任务 1 查询图片 2 查询故事 3 存redis 4 存mongod
+        let saveInfo = {} // 存储结果
 
-        logger.info(`执行dailySave: ${bingToday} 开始`, bingImageUrl, bingStoryUrl)
+        logger.info(`执行dailySave: ${bingToday} 开始`, bingImageRequestUrl, bingStoryRequestUrl)
+        
+        // step 1
+        // 获取原图
+        const requestImgResult = await this.requestBingImage(bingImageRequestUrl)
 
-        // 获取无水印图片
-        await superagent.get(bingImageUrl).set('Content-type', 'application/json').then((res) => {
-            if (res.status === 200 && res.body) {
-                imageData = res.body.images[0]
-                imageNoWaterMark = prefix + res.body.images[0].urlbase + '_' + defaultResolution + '.jpg'
-                task += 1
-                return
-            }
-            logger.error('请求bing图片接口未正常返回数据', bingImageUrl, res)
-        }).catch((e) => {
-            logger.error('请求bing图片查询接口失败', e)
-            // 预警模式下 发送报错邮件
-            warning && MailSercice.sendErrorReportMail('请求bing图片查询接口失败', e)
-        })
-
-        // 获取每日story数据
-        await superagent.get(bingStoryUrl).set('Content-type', 'application/json').then((res) => {
-            if (res.status === 200 && res.body) {
-                let saveData = res.body
-                saveData = Object.assign(imageData, saveData)
-                saveData.id = bingToday
-                // 添加之前保存的无水印图
-                saveData.imageUrl = imageNoWaterMark
-
-                originData = saveData
-                storyData = JSON.stringify(saveData)
-                task += 1
-                logger.info('请求bing接口成功')
-                return
-            }
-            logger.error('请求bing接口失败，返回', res.status)
-        }).catch((e) => {
-            logger.error('请求bing接口失败', e)
-            // 预警模式下 发送报错邮件
-            warning && MailSercice.sendErrorReportMail('请求bing图片查询接口失败', e)
-        })
-
-        // 检测是否可以存储数据
-        storyData && await redisInstance.haveHashKey(BING_STORY_KEY, bingToday).then((res) => {
-            logger.info('已存在bingStory, 流程结束', bingToday)
-        }).catch((err) => {
-            logger.info(`bingStory-${bingToday}-重复检测通过`)
-            canSave = true
-        })
-
-        if (!canSave) {
-            return
+        if (requestImgResult.suc) {
+            const _imageResult = requestImgResult.data
+            imageData = _imageResult
+            imageData.id = bingToday
+            imageData.imageUrl = prefix + imageData.urlbase + '_' + defaultResolution + '.jpg'
+            saveInfo.image = true
+            logger.info('dailySave请求bing图片成功')
+        } else {
+            logger.error('请求bing图片查询接口失败, 终止流程', requestImgResult.error)
+            warning && mailService.sendErrorReportMail('请求bing图片查询接口失败', requestImgResult.error)
+            // 终止
+            return 
         }
+
+        // step 2
+        // 获取story数据
+        const requestStoryResult = await this.requestBingStory(bingStoryRequestUrl)
+
+        if (requestStoryResult.suc) {
+            imageData = Object.assign(imageData, requestImgResult.data)
+            saveInfo.story = true
+            logger.info('detailSave请求bing图片接口成功')
+        } else {
+            imageData = Object.assign(imageData, { story: 'no story data' })
+            logger.error('请求bing故事接口失败', requestStoryResult.error)
+            // 0301 开始 接口不再提供数据，邮件屏蔽
+            // warning && mailService.sendErrorReportMail('请求bing图片查询接口失败', requestStoryResult.error)
+        }
+
+        // QiniuService.upload()
+
+        // step 3 
+        // 数据查重 
+        try {
+            let { doc } = await RedisStore.hget(BING_STORY_KEY, bingToday)
+            if (doc) { // 有数据
+                logger.error(`detailSave Redis查重：检测到重复值 ${bingToday}`)
+                return 
+            }
+            logger.info(`detailSave Redis查重通过`)
+        } catch (e) {
+            logger.error(`detailSave Redis查重出错`, e)
+        }
+
+        // ------------- dev start --------------        
+        // 下载到本地 然后上传到七牛云
+        const saveFileName = `bing-${bingToday}.jpg`
+        const saveFilePath = path.join(process.cwd(), SAVE_IMAGE_PATH)
+        let download = {}
+
+        try {
+            download = await DownLoadService.download(imageData.imageUrl, {
+                savePath: saveFilePath,
+                saveName: saveFileName
+            })
+            logger.info('detailSave 下载图片到本地成功')
+        } catch(e) {
+            download = e
+            logger.error('detailSave 下载图片到本地失败', download.error)
+        }
+
+        if (download.suc) {
+            try {
+                await QiniuService.upload(saveFilePath + saveFileName, saveFileName)
+
+                imageData.cdn = QINIU_DOMAIN + '/' + saveFileName
+
+                logger.info('detailSave 上传到七牛云成功')
+            } catch (e) {
+                logger.error('detailSave 上传到七牛云失败', e)
+                mailService.sendErrorReportMail('detailSave 上传到七牛云失败', e)
+            }
+        } else {
+            logger.error('detailSave 存储到本地失败', download.error)
+        }
+        // ------------- dev end ----------------
+
+        // step 4 存 redis
         // 存储流程
         // 进行数据存储
-        redisInstance.hashSet(BING_STORY_KEY, bingToday, storyData).then((res) => {
+        await RedisStore.hset(BING_STORY_KEY, bingToday, JSON.stringify(imageData)).then((res) => {
             logger.info(`Redis存储${bingToday}成功`)
+            saveInfo.redis = true
         }).catch((err) => {
-            logger.info(`Redis存储${bingToday}失败`, err)
-            // 发送失败邮件
-            MailSercice.sendErrorReportMail(`Redis存储${bingToday}失败`, err)
+            logger.error(`Redis存储${bingToday}失败`, err)
+            mailService.sendErrorReportMail(`Redis存储${bingToday}失败`, err)
         })
 
-        logger.info(`执行dailySave: ${bingToday} 完成, task: ${ task === 4 ? "success" : task }`)
-
+        // step 5 存 mongod
         // 满足存储条件 确保不重复储存
-        let mg_result = await StoreService.saveToBingData(originData)
-        if (mg_result.suc) {
-            logger.info(`Mongod存储${bingToday}成功`)
-        } else {
-            logger.error(`Mongod存储${bingToday}失败`, mg_result)
-            // 发送失败邮件
-            MailSercice.sendErrorReportMail(`Mongod存储${bingToday}失败`, mg_result.err)
+        try {
+            let _result = await bingModel.findOne({ id: bingToday })
+            if (_result !== null) {
+                logger.info('detailSave Mongod 查重： 重复值', bingToday)
+                return
+            }
+        } catch (e) {
+            logger.error(`detailSave ${bingToday} Mongod 查重出错`, e)
+        }
+
+        try {
+            await bingModel.create(imageData)
+            saveInfo.mongod = true
+            logger.info(`detailSave ${bingToday} Mongod 存储成功`)
+        } catch (e) {
+            logger.error(`detailSave ${bingToday} Mongod 存储出错`, e)
+            mailService.sendErrorReportMail(`Mongod存储${bingToday}失败`, e)
+        }
+
+        logger.info(`detailSave ${bingToday} 流程完成 ${JSON.stringify(saveInfo)}`)
+    }
+
+    static async requestBingImage (url) {
+        try {
+            let result = await superagent.get(url).set('Content-type', 'application/json')
+            if (result.status === 200 && result.body && result.body.images && result.body.images[0]) {
+                let data = result.body.images[0]
+                return { suc: true, data }
+            } else {
+                return { suc: false, error: '数据不完整' }
+            }
+        } catch (error) {
+            return { suc: false, error }
         }
     }
 
+    static async requestBingStory (url) {
+        try {
+            let {status, body} = await superagent.get(url).set('Content-type', 'application/json')
+            if (status === 200 && body) {
+                return { suc: true, data: body }
+            } else {
+                return { suc: false, error: `解析返回数据失败 status: ${status} body: ${body}`}
+            }
+        } catch (error) {
+            return { suc: false, error }
+        }
+    }
 
     /**
-     * 测试接口，存所有数据到mongod
+     * 权限方法，存所有数据到mongod
      */
     static async saveAllDataToDB () {
-
-        // TODO
-        // 部分流程转到store-services中去
-        //
-        //
-        let {detail} = await redisInstance.hashGetAllValues(BING_STORY_KEY)
+        // 
+        let {detail} = await RedisStore.hvals(BING_STORY_KEY)
         let resultList = []
 
         if (!detail || detail.length === 0) return false
 
-
-        detail.forEach((item, idx) => {
+        detail.forEach((item) => {
             try {
                 resultList.push(JSON.parse(item))
             } catch (e) {
@@ -180,14 +251,17 @@ class BingServices {
 
         resultList = resultList.sort((p, n) => { return Number(p.id) - Number(n.id) })
 
-        const result = await StoreService.multiSave(resultList)
-
-        return result
+        try {
+            const {count} = await bingModel.insertMany(resultList)
+            logger.info('批量存储数据成功', `共存储${count}条`)
+        } catch (e) {
+            logger.info('批量存储数据失败', e)
+        }   
     }
 
     /**
      * 存储指定时间的daily
-     * @param {Array} list
+     * @param {Array} list 
      */
     static async saveBingDailyStack (list) {
         // validate && 筛选 && 格式化数据
@@ -228,7 +302,7 @@ class BingServices {
     /**
      * 与bing日期相差的天数，如果时间超过limit 则返回false
      * const limit = gap >= -1 && gap <= 7
-     * @param {date} day
+     * @param {date} day 
      * @return (gap >= -1 && gap <= 7) ? gap : false不满足
      */
     static getBingDayGap (day) {
@@ -245,7 +319,7 @@ class BingServices {
      * 获取所有bing记录数据列表
      */
     static async getSaveList () {
-        return redisInstance.hashGetAllValues(BING_STORY_KEY)
+        return RedisStore.hvals(BING_STORY_KEY)
     }
 
     /**
@@ -253,18 +327,18 @@ class BingServices {
      * @pramas {yyyMMdd} date 日期键
      */
     static async getRecordByDate (date) {
-        return redisInstance.hashGet('bing_storys', date)
+        return RedisStore.hget('bing_storys', date)
     }
 
     /**
      * 获取请求bing图片地址
      * @param {js || ''} format 返回数据格式 js(json) or null(default: xml)
-     * @param {Number} idx 请求图片截至天数 0 today, -1 截至明天 1 截至昨天
+     * @param {Number} idx 请求图片时间偏移天数 0 today, -1 明天 1 截至昨天
      * @param {Number} n 请求数量 1-9
      * @param {String} mkt 地区
      * @return 格式化||默认 bing图片请求拼接地址
      */
-    static getBingImageUrl ({format = 'js', idx = 0, n = 1, mkt = 'zh-CN'}) {
+    static getBingImageRequestUrl ({format = 'js', idx = 0, n = 1, mkt = 'zh-CN'}) {
         let base = CONFIG.API.bingImageApi + '?format=:format&idx=:idx&n=:n&mkt=:mkt'
         let url = base
                     .replace(':format', format)
@@ -278,10 +352,10 @@ class BingServices {
      * 获取请求bing图片地址
      * @return 格式化 bing故事请求地址
      */
-    static getBingStoryUrl (d) {
+    static getBingStoryRequestUrl (d) {
         return CONFIG.API.bingStoryApi + '?d=' + d
     }
-
+    
     /**
      * 获取bing格式日期 yyyMMdd
      * @prams {Date} date 指定一个要转换日期
@@ -319,9 +393,9 @@ class BingServices {
             return elm
         })
         if (sort)
-            result = result.sort((a, b) => {
+            result = result.sort((a, b) => { 
                 return sort === '0' ?
-                     Number(a.id) - Number(b.id) :
+                     Number(a.id) - Number(b.id) : 
                      Number(b.id) - Number(a.id)
             }) // id从小到大排序
         return result
@@ -332,9 +406,9 @@ class BingServices {
             try { item = JSON.parse(item) } catch(e) {}
             return item
         })
-        data = data.sort((a, b) => {
+        data = data.sort((a, b) => { 
             return sort === '0' ?
-                Number(a.id) - Number(b.id) :
+                Number(a.id) - Number(b.id) : 
                 Number(b.id) - Number(a.id)
         }) // id从小到大排序
 
@@ -349,5 +423,4 @@ class BingServices {
 
 
 
-module.exports.BingService = BingServices
-module.exports.StoreService = StoreService
+module.exports = BingServices

@@ -14,6 +14,8 @@
 
 [api-info](./static/api-info.json)
 
+[效果demo](https://image.republix.cn)
+
 <br/>
 
 需要环境
