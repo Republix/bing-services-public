@@ -2,10 +2,9 @@ const Koa = require('koa'),
     bodyParser = require('koa-bodyparser'),
     CONFIG = require('./config'),
     router = require('./router'),
-    path = require('path'),
-    crossOrigin = require('koa2-origin-cors'),
-    static = require('koa-static'),
-    logger = require('./midware/log4j').middle,
+    static = require('./midware/static'),
+    cors = require('./midware/cors'),   
+    logger = require('./midware/log'),
     errorHandler = require('./midware/error').appErrorHandler,
     schedule = require('./services/schedule')
 
@@ -13,17 +12,14 @@ const Koa = require('koa'),
 const app = new Koa()
 
 app.use(logger())
-
-
-app.use(crossOrigin(CONFIG.CORSS))
+// cors
+app.use(cors())
+// static dir
+static.initial(app)
 
 app.use(bodyParser())
 
 app.use(router.routes()).use(router.allowedMethods())
-
-app.use(static(path.join(__dirname, CONFIG.STATIC_PATH)))
-
-app.use((ctx) => { ctx.throw(404) })
 
 app.on('error', errorHandler)
 

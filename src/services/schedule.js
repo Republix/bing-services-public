@@ -3,8 +3,8 @@
  */
 
 const Schedule = require('node-schedule'),
-    logger = require('../midware/log4j').app_logger,
-    BingServices = require('./services').BingService,
+    logger = require('../services/logs').app,
+    BingServices = require('./bing'),
     MailServices = require('./mail')
 
 // 计划时间表
@@ -22,7 +22,7 @@ class Task {
     static async bingImageDaily () {
 
         Schedule.scheduleJob(
-            TASK_TIMING.SAVE_BING_DETAIL,
+            TASK_TIMING.SAVE_BING_DETAIL, 
             () => {
                 BingServices.saveBingDaily({warning: true}) // 请求时开启邮件预警
             }
@@ -32,11 +32,15 @@ class Task {
     static async weekMailReport () {
 
         Schedule.scheduleJob(
-            TASK_TIMING.WEEK_MAIL_REPORT,
+            TASK_TIMING.WEEK_MAIL_REPORT, 
             MailServices.sendWeekMail
         )
     }
 
+
+    static developTask () {
+        // MailServices.sendErrorReportMail('test', {err: {err: 'test'}})
+    }
 }
 
 
@@ -50,6 +54,8 @@ const autoStartTask = async () => {
     Task.bingImageDaily()
     // 每周邮件发送服务
     Task.weekMailReport()
+
+    Task.developTask()
 }
 
 module.exports.autoStart = autoStartTask

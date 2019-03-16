@@ -1,19 +1,44 @@
-const mongoose = require('mongoose')
-
-const bingSchema = {
-    // mock: {
-    //     type: Number,
-    //     default: Obj.mock
-    // }
+const schema = {
+    "startdate": String,
+    "fullstartdate": String,
+    "enddate": String,
+    "url": String,
+    "urlbase": String,
+    "copyright": String,
+    "copyrightlink": String,
+    "title": String,
+    "quiz": String,
+    "wp": Boolean,
+    "hsh": String,
+    "drk": Number,
+    "top": Number,
+    "bot": Number,
+    "hs": Array,
+    "date": String,
+    "attribute": String,
+    "para1": String,
+    "para2": String,
+    "provider": String,
+    "imageUrl": String,
+    "primaryImageUrl": String,
+    "Country": String,
+    "City": String,
+    "Longitude": String,
+    "Latitude": String,
+    "Continent": String,
+    "CityInEnglish": String,
+    "CountryCode": String,
+    "id": String
 }
-const schema = new mongoose.Schema(bingSchema, {
+const extend = {
     createdAt: 'createdTs',
     updateAt: 'updateTs'
-})
+}
 
-const TYPE = 'bing'
+const name = 'bings'
 
 module.exports = {
     schema,
-    TYPE
+    extend,
+    name
 }
